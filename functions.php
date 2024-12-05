@@ -59,36 +59,53 @@ function chatgpt_chat_shortcode() {
         });
 
         uploadInput.addEventListener('change', async () => {
-            const file = uploadInput.files[0];
-            if (!file) return;
+    const file = uploadInput.files[0];
+    if (!file) return;
 
-            if (file.size > 10 * 1024 * 1024) {
-                alert('Файл слишком большой. Максимальный размер: 10 МБ.');
-                return;
-            }
+    // Проверка размера файла
+    if (file.size > 10 * 1024 * 1024) {
+        alert('Ошибка: Файл слишком большой. Максимальный размер: 10 МБ.');
+        return;
+    }
 
-            const formData = new FormData();
-            formData.append('file', file);
+    // Проверка типа файла
+    const allowedTypes = ['image/png', 'image/jpeg'];
+    if (!allowedTypes.includes(file.type)) {
+        alert('Ошибка: Недопустимый формат файла. Допустимы только PNG и JPEG.');
+        return;
+    }
 
-            try {
-                const response = await fetch('<?php echo esc_url(site_url('/wp-json/chatgpt/v1/upload')); ?>', {
-                    method: 'POST',
-                    body: formData,
-                });
+    const formData = new FormData();
+    formData.append('file', file);
 
-                const data = await response.json();
-
-                if (response.ok && data.url) {
-                    const chatBox = document.getElementById('chat-box');
-                    chatBox.innerHTML += `<p><strong>Вы загрузили файл:</strong> <a href="${data.url}" target="_blank">${data.url}</a></p>`;
-                } else {
-                    alert(data.error || 'Не удалось загрузить файл.');
-                }
-            } catch (error) {
-                console.error(error);
-                alert('Ошибка загрузки файла.');
-            }
+    try {
+        // Отправка файла на сервер
+        const response = await fetch('<?php echo esc_url(site_url('/wp-json/chatgpt/v1/upload')); ?>', {
+            method: 'POST',
+            body: formData,
         });
+
+        const data = await response.json();
+
+        if (response.ok && data.text) {
+            alert('Файл успешно обработан! Извлеченный текст добавлен в поле для ввода.');
+
+            // Добавление текста в поле для ввода сообщения
+            const inputField = document.getElementById('user-input');
+            inputField.value = data.text;
+
+            // Также показываем текст в истории чата (опционально)
+            const chatBox = document.getElementById('chat-box');
+            chatBox.innerHTML += `<p><strong>Извлеченный текст:</strong> ${data.text}</p>`;
+        } else {
+            alert(`Ошибка: ${data.error || 'Не удалось извлечь текст из изображения.'}`);
+        }
+    } catch (error) {
+        console.error(error);
+        alert('Ошибка: произошла ошибка при обработке файла.');
+    }
+});
+
 
         document.getElementById('send-btn').addEventListener('click', async function () {
             const inputField = document.getElementById('user-input');
@@ -158,7 +175,7 @@ function handle_file_upload(WP_REST_Request $request) {
     }
 
     $file = $_FILES['file'];
-    $allowed_types = ['image/png', 'image/jpeg', 'application/pdf'];
+    $allowed_types = ['image/png', 'image/jpeg'];
 
     if (!in_array($file['type'], $allowed_types)) {
         return new WP_REST_Response(['error' => 'Недопустимый формат файла.'], 400);
@@ -174,7 +191,17 @@ function handle_file_upload(WP_REST_Request $request) {
         return new WP_REST_Response(['error' => $upload['error']], 400);
     }
 
-    return new WP_REST_Response(['url' => $upload['url']], 200);
+    $file_path = $upload['file'];
+
+    // Распознаем текст с помощью Tesseract
+    $command = escapeshellcmd("tesseract " . escapeshellarg($file_path) . " stdout -l rus+eng");
+    $recognized_text = shell_exec($command);
+
+    if (empty($recognized_text)) {
+        return new WP_REST_Response(['error' => 'Не удалось распознать текст из изображения.'], 500);
+    }
+
+    return new WP_REST_Response(['text' => trim($recognized_text)], 200);
 }
 
 // Обработчик REST API для сообщений
@@ -197,7 +224,7 @@ function handle_chatgpt_message(WP_REST_Request $request) {
 
     $api_key = defined('OPENAI_API_KEY') ? OPENAI_API_KEY : 'ваш-ключ';
     $body = json_encode([
-        'model' => 'gpt-4o',
+        'model' => 'gpt-4',
         'messages' => array_map(function ($entry) {
             return [
                 'role' => ($entry['role'] === 'Вы') ? 'user' : 'assistant',
