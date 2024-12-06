@@ -22,13 +22,11 @@ function chatgpt_chat_shortcode() {
         return '<p>Вы должны войти в систему, чтобы использовать чат.</p>';
     }
 
-    // Передаем историю сообщений из сессии в JavaScript
     $history = isset($_SESSION['chat_history']) ? $_SESSION['chat_history'] : [];
 
     ob_start(); ?>
     <div id="chatgpt-chat">
         <div id="chat-box">
-            <!-- История чата из PHP -->
             <?php if (!empty($history)) : ?>
                 <?php foreach ($history as $entry) : ?>
                     <p><strong><?php echo esc_html($entry['role']); ?>:</strong> <?php echo esc_html($entry['content']); ?></p>
@@ -38,12 +36,13 @@ function chatgpt_chat_shortcode() {
             <?php endif; ?>
         </div>
         <textarea id="user-input" placeholder="Введите сообщение..."></textarea>
+        <input type="hidden" id="hidden-file-content" value=""> <!-- Скрытое поле для текста из файла -->
         <div id="chat-controls" style="display: flex; justify-content: center; align-items: center; gap: 10px;">
             <button id="attach-btn" title="Загрузить файл">
                 <i class="fas fa-paperclip"></i>
             </button>
             <button id="send-btn">
-                <i class="fas fa-envelope"></i> 
+                <i class="fas fa-envelope"></i>
                 <span>Отправить</span>
             </button>
         </div>
@@ -53,81 +52,95 @@ function chatgpt_chat_shortcode() {
     <script>
         const uploadInput = document.getElementById('file-upload');
         const attachBtn = document.getElementById('attach-btn');
+        const hiddenFileContent = document.getElementById('hidden-file-content'); // Скрытое поле для текста из файла
 
         attachBtn.addEventListener('click', () => {
             uploadInput.click();
         });
 
         uploadInput.addEventListener('change', async () => {
-    const file = uploadInput.files[0];
-    if (!file) return;
+            const file = uploadInput.files[0];
+            if (!file) return;
 
-    // Проверка размера файла
-    if (file.size > 10 * 1024 * 1024) {
-        alert('Ошибка: Файл слишком большой. Максимальный размер: 10 МБ.');
-        return;
-    }
+            // Проверка размера файла
+            if (file.size > 10 * 1024 * 1024) {
+                alert('Ошибка: Файл слишком большой. Максимальный размер: 10 МБ.');
+                return;
+            }
 
-    // Проверка типа файла
-    const allowedTypes = ['image/png', 'image/jpeg'];
-    if (!allowedTypes.includes(file.type)) {
-        alert('Ошибка: Недопустимый формат файла. Допустимы только PNG и JPEG.');
-        return;
-    }
+            // Проверка типа файла
+            const allowedTypes = ['image/png', 'image/jpeg'];
+            if (!allowedTypes.includes(file.type)) {
+                alert('Ошибка: Недопустимый формат файла. Допустимы только PNG и JPEG.');
+                return;
+            }
 
-    const formData = new FormData();
-    formData.append('file', file);
+            const formData = new FormData();
+            formData.append('file', file);
 
-    try {
-        // Отправка файла на сервер
-        const response = await fetch('<?php echo esc_url(site_url('/wp-json/chatgpt/v1/upload')); ?>', {
-            method: 'POST',
-            body: formData,
+            try {
+                const response = await fetch('<?php echo esc_url(site_url('/wp-json/chatgpt/v1/upload')); ?>', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.text) {
+                    // Сохраняем распознанный текст в скрытом поле
+                    hiddenFileContent.value = data.text;
+
+                    // Отображаем сообщение с названием файла в чате
+                    const chatBox = document.getElementById('chat-box');
+                    chatBox.innerHTML += `<p><strong>Вы:</strong> Файл "${file.name}" добавлен</p>`;
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                } else {
+                    alert(`Ошибка: ${data.error || 'Не удалось извлечь текст из изображения.'}`);
+                }
+            } catch (error) {
+                console.error(error);
+                alert('Ошибка: произошла ошибка при обработке файла.');
+            }
         });
-
-        const data = await response.json();
-
-        if (response.ok && data.text) {
-            alert('Файл успешно обработан! Извлеченный текст добавлен в поле для ввода.');
-
-            // Добавление текста в поле для ввода сообщения
-            const inputField = document.getElementById('user-input');
-            inputField.value = data.text;
-
-            // Также показываем текст в истории чата (опционально)
-            const chatBox = document.getElementById('chat-box');
-            chatBox.innerHTML += `<p><strong>Извлеченный текст:</strong> ${data.text}</p>`;
-        } else {
-            alert(`Ошибка: ${data.error || 'Не удалось извлечь текст из изображения.'}`);
-        }
-    } catch (error) {
-        console.error(error);
-        alert('Ошибка: произошла ошибка при обработке файла.');
-    }
-});
-
 
         document.getElementById('send-btn').addEventListener('click', async function () {
             const inputField = document.getElementById('user-input');
-            const input = inputField.value.trim();
+            const userMessage = inputField.value.trim();
+            const fileContent = hiddenFileContent.value; // Получаем текст из файла
 
-            if (!input) return; // Проверяем, что поле не пустое
+            if (!userMessage && !fileContent) return; // Ничего не отправляем, если поле пустое и нет текста из файла
 
-            // Очищаем поле ввода
+
+        // Объединяем сообщение пользователя с текстом файла
+        const combinedMessage = [userMessage, fileContent].filter(Boolean).join('\n\n---\n\n');
+
+        console.log('Отправка данных:', { combinedMessage }); // Отладка
+
+            // Очищаем поле ввода и отключаем кнопки
             inputField.value = '';
             inputField.disabled = true;
             this.disabled = true;
 
+            // Добавляем сообщение пользователя в чат
             const chatBox = document.getElementById('chat-box');
-            chatBox.innerHTML += `<p><strong>Вы:</strong> ${input}</p>`; // Добавляем сообщение пользователя
+            if (userMessage) {
+                chatBox.innerHTML += `<p><strong>Вы:</strong> ${userMessage}</p>`;
+            }
+            if (fileContent) {
+                chatBox.innerHTML += `<p><strong>Вы:</strong> (Текст файла отправлен)</p>`;
+            }
 
             try {
+                // Формируем запрос
                 const response = await fetch('<?php echo esc_url(site_url('/wp-json/chatgpt/v1/message')); ?>', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ message: input }),
+                    body: JSON.stringify({
+                        message: combinedMessage,
+                       // file_content: fileContent, // Добавляем текст из файла
+                    }),
                 });
 
                 const data = await response.json();
@@ -143,6 +156,7 @@ function chatgpt_chat_shortcode() {
             } finally {
                 inputField.disabled = false;
                 this.disabled = false;
+                hiddenFileContent.value = ''; // Очищаем скрытое поле после отправки
             }
 
             chatBox.scrollTop = chatBox.scrollHeight; // Прокрутка чата вниз
@@ -212,16 +226,33 @@ function handle_chatgpt_message(WP_REST_Request $request) {
         return new WP_REST_Response(['error' => 'Сообщение не может быть пустым.'], 400);
     }
 
+    // Инициализируем историю чата, если её нет
     if (!isset($_SESSION['chat_history'])) {
         $_SESSION['chat_history'] = [];
     }
 
+    // Добавляем системный промт только один раз
+    if (empty(array_filter($_SESSION['chat_history'], function ($entry) {
+        return $entry['role'] === 'system';
+    }))) {
+        $_SESSION['chat_history'][] = [
+            'role' => 'system',
+            'content' =>  "Представь, что ты опытный врач-диагност с 20-летним стажем. Ты специализируешься на анализе и интерпретации медицинских данных, включая результаты анализов крови, гормонов, мочи и других исследований. Ты даешь подробные и понятные объяснения результатов анализов для пациентов и врачей. Твоя цель:
+Проанализировать предоставленные медицинские анализы и подробно разъяснить, что означают их показатели. Указать, какие значения находятся в пределах нормы, какие выходят за пределы нормы, и какие возможные причины отклонений. Объяснить медицинские термины и дать рекомендации, если требуется дальнейшее обследование или консультация. Всегда пиши ответ по русски если тебя не попрошу об ином."
+        ];
+    }
+
+    // Добавляем сообщение пользователя в историю
     $_SESSION['chat_history'][] = ['role' => 'Вы', 'content' => $message];
 
+    // Ограничиваем историю до последних 5 сообщений для компактности
     if (count($_SESSION['chat_history']) > 5) {
         $_SESSION['chat_history'] = array_slice($_SESSION['chat_history'], -5);
     }
 
+
+
+// Формируем запрос к OpenAI
     $api_key = defined('OPENAI_API_KEY') ? OPENAI_API_KEY : 'ваш-ключ';
     $body = json_encode([
         'model' => 'gpt-4',
