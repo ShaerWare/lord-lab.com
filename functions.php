@@ -37,15 +37,18 @@ function chatgpt_chat_shortcode() {
         </div>
         <textarea id="user-input" placeholder="Введите сообщение..."></textarea>
         <input type="hidden" id="hidden-file-content" value=""> <!-- Скрытое поле для текста из файла -->
-        <div id="chat-controls" style="display: flex; justify-content: center; align-items: center; gap: 10px;">
-            <button id="attach-btn" title="Загрузить файл">
-                <i class="fas fa-paperclip"></i>
-            </button>
-            <button id="send-btn">
-                <i class="fas fa-envelope"></i>
-                <span>Отправить</span>
-            </button>
-        </div>
+            <div id="chat-controls" style="display: flex; justify-content: center; align-items: center; gap: 10px;">
+                <button id="attach-btn" title="Загрузить файл">
+                    <i class="fas fa-paperclip"></i>
+                </button>
+                <button id="send-btn">
+                    <i class="fas fa-envelope"></i>
+                    <span>Отправить</span>
+                </button>
+                <button id="clear-btn" style="background-color: red; color: white; border: none; padding: 5px 10px; cursor: pointer;">
+        Очистить историю
+                </button>
+            </div>
         <input type="file" id="file-upload" accept=".png,.jpeg,.jpg,.pdf" style="display: none;" />
     </div>
 
@@ -161,6 +164,32 @@ function chatgpt_chat_shortcode() {
 
             chatBox.scrollTop = chatBox.scrollHeight; // Прокрутка чата вниз
         });
+        document.getElementById('clear-btn').addEventListener('click', async function () {
+    if (!confirm('Вы уверены, что хотите очистить историю чата? Это действие нельзя отменить.')) {
+        return;
+    }
+
+    const chatBox = document.getElementById('chat-box');
+    chatBox.innerHTML = `<p><strong>Bot-Lab:</strong> История была очищена. Начинайте новый диалог!</p>`;
+
+    try {
+        const response = await fetch('<?php echo esc_url(site_url('/wp-json/chatgpt/v1/clear-history')); ?>', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error('Не удалось очистить историю на сервере.');
+        }
+
+        console.log('История успешно очищена.');
+    } catch (error) {
+        console.error('Ошибка при очистке истории:', error);
+        chatBox.innerHTML += `<p><strong>Ошибка:</strong> Не удалось очистить историю на сервере.</p>`;
+    }
+});
     </script>
     <?php
     return ob_get_clean();
@@ -297,4 +326,21 @@ function handle_chatgpt_message(WP_REST_Request $request) {
     $_SESSION['chat_history'][] = ['role' => 'Bot-Lab', 'content' => $reply];
 
     return new WP_REST_Response(['response' => $reply], 200);
+}
+add_action('rest_api_init', function () {
+    register_rest_route('chatgpt/v1', '/clear-history', [
+        'methods' => 'POST',
+        'callback' => 'clear_chat_history',
+        'permission_callback' => '__return_true',
+    ]);
+});
+
+// Обработчик маршрута очистки истории
+function clear_chat_history(WP_REST_Request $request) {
+    // Очистка сессии чата
+    if (isset($_SESSION['chat_history'])) {
+        unset($_SESSION['chat_history']);
+    }
+
+    return new WP_REST_Response(['message' => 'История успешно очищена.'], 200);
 }
