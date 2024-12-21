@@ -20,7 +20,7 @@ add_action('wp_head', function () {
 
 // Подключение Parsedown 
 require_once ABSPATH . '/vendor/erusev/parsedown/Parsedown.php';
-use Parsedown;
+//use Parsedown;
 
 /**
  * Функция для преобразования Markdown в HTML
@@ -37,9 +37,7 @@ function parse_markdown_to_html($content)
 // Шорткод для отображения чата
 function chatgpt_chat_shortcode()
 {
-    if (!is_user_logged_in()) {
-        return '<p>Вы должны войти в систему, чтобы использовать чат.</p>';
-    }
+    
 
     $history = isset($_SESSION['chat_history']) ? $_SESSION['chat_history'] : [];
 
@@ -83,15 +81,42 @@ function chatgpt_chat_shortcode()
     </div>
 
     <script>
+        // URL для перенаправления
+        const loginUrl = '<?php echo wp_login_url(); ?>';
+
+        const isUserLoggedIn = <?php echo is_user_logged_in() ? 'true' : 'false'; ?>;
+
+        // Отключение действий для неавторизованных пользователей
+        const buttons = document.querySelectorAll('#attach-btn, #send-btn, #clear-btn');
+        buttons.forEach(button => {
+            button.addEventListener('click', (event) => {
+                if (!isUserLoggedIn) {
+                    event.preventDefault();
+                    alert('Вы должны войти в систему для выполнения этого действия.');
+                    window.location.href = loginUrl;
+                }
+            });
+        });
+
         const uploadInput = document.getElementById('file-upload');
         const attachBtn = document.getElementById('attach-btn');
         const hiddenFileContent = document.getElementById('hidden-file-content'); // Скрытое поле для текста из файла
 
         attachBtn.addEventListener('click', () => {
+            if (!isUserLoggedIn) {
+                alert('Вы должны войти в систему для загрузки файлов.');
+                window.location.href = loginUrl;
+                return;
+            }
             uploadInput.click();
         });
 
         uploadInput.addEventListener('change', async () => {
+            if (!isUserLoggedIn) {
+                alert('Вы должны войти в систему для загрузки файлов.');
+                window.location.href = loginUrl;
+                return;
+            }
             const file = uploadInput.files[0];
             if (!file) return;
 
@@ -125,7 +150,7 @@ function chatgpt_chat_shortcode()
 
                     // Отображаем сообщение с названием файла в чате
                     const chatBox = document.getElementById('chat-box');
-                    chatBox.innerHTML += `<p><strong>Вы:</strong> Файл "${file.name}" добавлен</p>`;
+                    chatBox.innerHTML += `<p><strong>Вы:</strong> Файл "${file.name}" добавлен <a href="#" class="delete-file">&lt;удалить файл&gt;</a></p>`;
                     chatBox.scrollTop = chatBox.scrollHeight;
                 } else {
                     alert(`Ошибка: ${data.error || 'Не удалось извлечь текст из изображения.'}`);
@@ -137,6 +162,11 @@ function chatgpt_chat_shortcode()
         });
 
         document.getElementById('send-btn').addEventListener('click', async function () {
+            if (!isUserLoggedIn) {
+                alert('Вы должны войти в систему для отправки сообщений.');
+                window.location.href = loginUrl;
+                return;
+            }
             const inputField = document.getElementById('user-input');
             const userMessage = inputField.value.trim();
             const fileContent = hiddenFileContent.value; // Получаем текст из файла
@@ -195,6 +225,11 @@ function chatgpt_chat_shortcode()
             chatBox.scrollTop = chatBox.scrollHeight; // Прокрутка чата вниз
         });
         document.getElementById('clear-btn').addEventListener('click', async function () {
+            if (!isUserLoggedIn) {
+                alert('Вы должны войти в систему для очистки истории.');
+                window.location.href = loginUrl;
+                return;
+            }
             if (!confirm('Вы уверены, что хотите очистить историю чата? Это действие нельзя отменить.')) {
                 return;
             }
