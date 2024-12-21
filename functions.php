@@ -16,8 +16,27 @@ add_action('wp_head', function () {
     echo '<!-- Дочерняя тема подключена -->';
 });
 
+
+
+// Подключение Parsedown 
+require_once ABSPATH . '/vendor/erusev/parsedown/Parsedown.php';
+use Parsedown;
+
+/**
+ * Функция для преобразования Markdown в HTML
+ *
+ * @param string $content Markdown-текст.
+ * @return string HTML-код.
+ */
+function parse_markdown_to_html($content)
+{
+    $parsedown = new Parsedown();
+    return $parsedown->text($content);
+}
+
 // Шорткод для отображения чата
-function chatgpt_chat_shortcode() {
+function chatgpt_chat_shortcode()
+{
     if (!is_user_logged_in()) {
         return '<p>Вы должны войти в систему, чтобы использовать чат.</p>';
     }
@@ -26,30 +45,41 @@ function chatgpt_chat_shortcode() {
 
     ob_start(); ?>
     <div id="chatgpt-chat">
-        <div id="chat-box">
-            <?php if (!empty($history)) : ?>
-                <?php foreach ($history as $entry) : ?>
-                    <p><strong><?php echo esc_html($entry['role']); ?>:</strong> <?php echo esc_html($entry['content']); ?></p>
-                <?php endforeach; ?>
-            <?php else : ?>
-                <p><strong>Bot-Lab:</strong> Привет! Я - искусственный интеллект. Пришлите текст или загрузите файл, чтобы начать.</p>
-            <?php endif; ?>
-        </div>
         <textarea id="user-input" placeholder="Введите сообщение..."></textarea>
         <input type="hidden" id="hidden-file-content" value=""> <!-- Скрытое поле для текста из файла -->
-            <div id="chat-controls" style="display: flex; justify-content: center; align-items: center; gap: 10px;">
-                <button id="attach-btn" title="Загрузить файл">
-                    <i class="fas fa-paperclip"></i>
-                </button>
-                <button id="send-btn">
-                    <i class="fas fa-envelope"></i>
-                    <span>Отправить</span>
-                </button>
-                <button id="clear-btn" style="background-color: red; color: white; border: none; padding: 5px 10px; cursor: pointer;">
-        Очистить историю
-                </button>
-            </div>
+        <div id="chat-controls" style="display: flex; justify-content: center; align-items: center; gap: 10px;">
+            <button id="attach-btn" title="Загрузить файл">
+                <i class="fas fa-paperclip"></i>
+            </button>
+            <button id="send-btn">
+                <i class="fas fa-envelope"></i>
+                <span>Отправить</span>
+            </button>
+            <button id="clear-btn"
+                style="background-color: red; color: white; border: none; padding: 5px 10px; cursor: pointer;">
+                Очистить историю
+            </button>
+        </div>
         <input type="file" id="file-upload" accept=".png,.jpeg,.jpg,.pdf" style="display: none;" />
+        <br>
+        <div id="chat-box">
+            <?php if (!empty($history)): ?>
+                <?php foreach ($history as $entry): ?>
+                    <p><strong><?php echo esc_html($entry['role']); ?>:</strong>
+                    </p>
+                    <div class="chat-message">
+                        <?php
+                        // Преобразование Markdown в HTML
+                        echo parse_markdown_to_html($entry['content']);
+                        ?>
+                    </div>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <p><strong>Bot-Lab:</strong> Привет! Я - искусственный интеллект. Пришлите текст или загрузите файл, чтобы
+                    начать.</p>
+            <?php endif; ?>
+        </div>
+
     </div>
 
     <script>
@@ -114,10 +144,10 @@ function chatgpt_chat_shortcode() {
             if (!userMessage && !fileContent) return; // Ничего не отправляем, если поле пустое и нет текста из файла
 
 
-        // Объединяем сообщение пользователя с текстом файла
-        const combinedMessage = [userMessage, fileContent].filter(Boolean).join('\n\n---\n\n');
+            // Объединяем сообщение пользователя с текстом файла
+            const combinedMessage = [userMessage, fileContent].filter(Boolean).join('\n\n---\n\n');
 
-        console.log('Отправка данных:', { combinedMessage }); // Отладка
+            console.log('Отправка данных:', { combinedMessage }); // Отладка
 
             // Очищаем поле ввода и отключаем кнопки
             inputField.value = '';
@@ -142,7 +172,7 @@ function chatgpt_chat_shortcode() {
                     },
                     body: JSON.stringify({
                         message: combinedMessage,
-                       // file_content: fileContent, // Добавляем текст из файла
+                        // file_content: fileContent, // Добавляем текст из файла
                     }),
                 });
 
@@ -165,31 +195,31 @@ function chatgpt_chat_shortcode() {
             chatBox.scrollTop = chatBox.scrollHeight; // Прокрутка чата вниз
         });
         document.getElementById('clear-btn').addEventListener('click', async function () {
-    if (!confirm('Вы уверены, что хотите очистить историю чата? Это действие нельзя отменить.')) {
-        return;
-    }
+            if (!confirm('Вы уверены, что хотите очистить историю чата? Это действие нельзя отменить.')) {
+                return;
+            }
 
-    const chatBox = document.getElementById('chat-box');
-    chatBox.innerHTML = `<p><strong>Bot-Lab:</strong> История была очищена. Начинайте новый диалог!</p>`;
+            const chatBox = document.getElementById('chat-box');
+            chatBox.innerHTML = `<p><strong>Bot-Lab:</strong> История была очищена. Начинайте новый диалог!</p>`;
 
-    try {
-        const response = await fetch('<?php echo esc_url(site_url('/wp-json/chatgpt/v1/clear-history')); ?>', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            try {
+                const response = await fetch('<?php echo esc_url(site_url('/wp-json/chatgpt/v1/clear-history')); ?>', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                if (!response.ok) {
+                    throw new Error('Не удалось очистить историю на сервере.');
+                }
+
+                console.log('История успешно очищена.');
+            } catch (error) {
+                console.error('Ошибка при очистке истории:', error);
+                chatBox.innerHTML += `<p><strong>Ошибка:</strong> Не удалось очистить историю на сервере.</p>`;
+            }
         });
-
-        if (!response.ok) {
-            throw new Error('Не удалось очистить историю на сервере.');
-        }
-
-        console.log('История успешно очищена.');
-    } catch (error) {
-        console.error('Ошибка при очистке истории:', error);
-        chatBox.innerHTML += `<p><strong>Ошибка:</strong> Не удалось очистить историю на сервере.</p>`;
-    }
-});
     </script>
     <?php
     return ob_get_clean();
@@ -212,7 +242,8 @@ add_action('rest_api_init', function () {
 });
 
 // Обработчик REST API для загрузки файлов
-function handle_file_upload(WP_REST_Request $request) {
+function handle_file_upload(WP_REST_Request $request)
+{
     if (empty($_FILES['file'])) {
         return new WP_REST_Response(['error' => 'Файл не передан.'], 400);
     }
@@ -248,7 +279,8 @@ function handle_file_upload(WP_REST_Request $request) {
 }
 
 // Обработчик REST API для сообщений
-function handle_chatgpt_message(WP_REST_Request $request) {
+function handle_chatgpt_message(WP_REST_Request $request)
+{
     $message = sanitize_text_field($request->get_param('message'));
 
     if (empty($message)) {
@@ -261,12 +293,14 @@ function handle_chatgpt_message(WP_REST_Request $request) {
     }
 
     // Добавляем системный промт только один раз
-    if (empty(array_filter($_SESSION['chat_history'], function ($entry) {
-        return $entry['role'] === 'system';
-    }))) {
+    if (
+        empty(array_filter($_SESSION['chat_history'], function ($entry) {
+            return $entry['role'] === 'system';
+        }))
+    ) {
         $_SESSION['chat_history'][] = [
             'role' => 'system',
-            'content' =>  "Представь, что ты опытный врач-диагност с 20-летним стажем. Ты специализируешься на анализе и интерпретации медицинских данных, включая результаты анализов крови, гормонов, мочи и других исследований. Ты даешь подробные и понятные объяснения результатов анализов для пациентов и врачей. Твоя цель:
+            'content' => "Представь, что ты опытный врач-диагност с 20-летним стажем. Ты специализируешься на анализе и интерпретации медицинских данных, включая результаты анализов крови, гормонов, мочи и других исследований. Ты даешь подробные и понятные объяснения результатов анализов для пациентов и врачей. Твоя цель:
 Проанализировать предоставленные медицинские анализы и подробно разъяснить, что означают их показатели. Указать, какие значения находятся в пределах нормы, какие выходят за пределы нормы, и какие возможные причины отклонений. Объяснить медицинские термины и дать рекомендации, если требуется дальнейшее обследование или консультация. Всегда пиши ответ по русски если тебя не попрошу об ином."
         ];
     }
@@ -281,7 +315,7 @@ function handle_chatgpt_message(WP_REST_Request $request) {
 
 
 
-// Формируем запрос к OpenAI
+    // Формируем запрос к OpenAI
     $api_key = defined('OPENAI_API_KEY') ? OPENAI_API_KEY : 'ваш-ключ';
     $body = json_encode([
         'model' => 'gpt-4',
@@ -336,7 +370,8 @@ add_action('rest_api_init', function () {
 });
 
 // Обработчик маршрута очистки истории
-function clear_chat_history(WP_REST_Request $request) {
+function clear_chat_history(WP_REST_Request $request)
+{
     // Очистка сессии чата
     if (isset($_SESSION['chat_history'])) {
         unset($_SESSION['chat_history']);
