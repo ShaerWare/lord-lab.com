@@ -37,7 +37,7 @@ function parse_markdown_to_html($content)
 // Шорткод для отображения чата
 function chatgpt_chat_shortcode()
 {
-    
+
 
     $history = isset($_SESSION['chat_history']) ? $_SESSION['chat_history'] : [];
 
@@ -117,6 +117,7 @@ function chatgpt_chat_shortcode()
                 window.location.href = loginUrl;
                 return;
             }
+
             const file = uploadInput.files[0];
             if (!file) return;
 
@@ -150,7 +151,8 @@ function chatgpt_chat_shortcode()
 
                     // Отображаем сообщение с названием файла в чате
                     const chatBox = document.getElementById('chat-box');
-                    chatBox.innerHTML += `<p><strong>Вы:</strong> Файл "${file.name}" добавлен <a href="#" class="delete-file">&lt;удалить файл&gt;</a></p>`;
+                    const fileId = `file-${Date.now()}`; // Уникальный идентификатор для файла
+                    chatBox.innerHTML += `<p id="${fileId}"><strong>Вы:</strong> Файл "${file.name}" добавлен <a href="#" class="delete-file">&lt;удалить файл&gt;</a></p>`;
                     chatBox.scrollTop = chatBox.scrollHeight;
                 } else {
                     alert(`Ошибка: ${data.error || 'Не удалось извлечь текст из изображения.'}`);
@@ -160,6 +162,23 @@ function chatgpt_chat_shortcode()
                 alert('Ошибка: произошла ошибка при обработке файла.');
             }
         });
+
+        // Используем делегирование событий для удаления файла
+        document.getElementById('chat-box').addEventListener('click', (event) => {
+            if (event.target.classList.contains('delete-file')) {
+                event.preventDefault();
+
+                const fileMessage = event.target.closest('p');
+                if (fileMessage) {
+                    fileMessage.remove(); // Удаляем сообщение из чата
+                }
+
+                hiddenFileContent.value = ''; // Очищаем текст из файла
+                uploadInput.value = ''; // Сбрасываем input-файл
+                alert('Файл успешно удалён.');
+            }
+        });
+
 
         document.getElementById('send-btn').addEventListener('click', async function () {
             if (!isUserLoggedIn) {
