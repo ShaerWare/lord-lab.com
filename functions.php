@@ -12,10 +12,14 @@ add_action('init', function () {
     }
 });
 
+/*
 add_action('wp_head', function () {
     echo '<!-- Дочерняя тема подключена -->';
 });
+*/
 
+// Подключение файла чата Google Gemini
+require_once ABSPATH . 'wp-content/themes/my-theme-child/google-gemini-chat.php';
 
 
 // Подключение Parsedown 
