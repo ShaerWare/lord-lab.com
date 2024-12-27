@@ -3,6 +3,11 @@ if (!defined('ABSPATH')) {
     exit; // Защита от прямого доступа
 }
 
+// Подключение дополнительных стилей или скриптов в head
+add_action('wp_head', function () {
+    echo '<!-- Дочерняя тема подключена 2-->';
+});
+
 // Шорткод для отображения чата с Google Gemini
 function gemini_chat_shortcode() {
     // Подготовка истории чата
@@ -39,18 +44,16 @@ function gemini_chat_shortcode() {
 
             if (!userMessage) return;
 
-            // Очищаем поле ввода и отключаем кнопку
             inputField.value = '';
             inputField.disabled = true;
             this.disabled = true;
 
             const chatBox = document.getElementById('gemini-chat-box');
 
-            // Добавляем сообщение пользователя в чат
             chatBox.innerHTML += `<p><strong>Вы:</strong> ${userMessage}</p>`;
 
             try {
-                const response = await fetch('<?php echo esc_url(site_url('/wp-json/gemini/v1/message')); ?>', {
+                const response = await fetch('<?php echo esc_url(rest_url('gemini/v1/message')); ?>', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -73,7 +76,7 @@ function gemini_chat_shortcode() {
                 this.disabled = false;
             }
 
-            chatBox.scrollTop = chatBox.scrollHeight; // Прокрутка чата вниз
+            chatBox.scrollTop = chatBox.scrollHeight;
         });
 
         document.getElementById('gemini-clear-btn').addEventListener('click', async function () {
@@ -81,7 +84,7 @@ function gemini_chat_shortcode() {
             chatBox.innerHTML = `<p><strong>Gemini:</strong> История была очищена. Начинайте новый диалог!</p>`;
 
             try {
-                const response = await fetch('<?php echo esc_url(site_url('/wp-json/gemini/v1/clear-history')); ?>', {
+                const response = await fetch('<?php echo esc_url(rest_url('gemini/v1/clear-history')); ?>', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -121,28 +124,39 @@ add_action('rest_api_init', function () {
 
 // Обработчик сообщений для Google Gemini
 function handle_gemini_message(WP_REST_Request $request) {
+    // Получаем сообщение пользователя
     $message = sanitize_text_field($request->get_param('message'));
 
     if (empty($message)) {
         return new WP_REST_Response(['error' => 'Сообщение не может быть пустым.'], 400);
     }
 
-    // Инициализируем историю чата, если её нет
+    // Инициализация сессии, если не запущена
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    // Подготовка истории чата
     if (!isset($_SESSION['gemini_chat_history'])) {
         $_SESSION['gemini_chat_history'] = [];
     }
 
-    // Добавляем сообщение пользователя в историю
     $_SESSION['gemini_chat_history'][] = ['role' => 'Вы', 'content' => $message];
 
-    // Ограничиваем историю до последних 5 сообщений
+    // Ограничиваем длину истории до 5 сообщений
     if (count($_SESSION['gemini_chat_history']) > 5) {
         $_SESSION['gemini_chat_history'] = array_slice($_SESSION['gemini_chat_history'], -5);
     }
 
-    // Формируем запрос к API Google Gemini
-    $api_key = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : 'ваш-ключ';
+    // API-ключ из wp-config.php
+    $api_key = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '';
+    if (empty($api_key)) {
+        return new WP_REST_Response(['error' => 'API-ключ не задан.'], 500);
+    }
+
+    // Формируем тело запроса к API
     $body = json_encode([
+        'model' => 'gemini-1.5-flash', // Укажите нужную модель
         'messages' => array_map(function ($entry) {
             return [
                 'role' => ($entry['role'] === 'Вы') ? 'user' : 'assistant',
@@ -151,7 +165,8 @@ function handle_gemini_message(WP_REST_Request $request) {
         }, $_SESSION['gemini_chat_history']),
     ], JSON_UNESCAPED_UNICODE);
 
-    $ch = curl_init('https://api.google.com/gemini/v1/chat'); // Замените URL на актуальный для Gemini API
+    // Выполняем запрос к API через cURL
+    $ch = curl_init('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
@@ -165,14 +180,17 @@ function handle_gemini_message(WP_REST_Request $request) {
     $error = curl_error($ch);
     curl_close($ch);
 
+    // Проверяем ошибки cURL
     if ($error) {
         return new WP_REST_Response(['error' => 'Ошибка cURL: ' . $error], 500);
     }
 
+    // Проверяем HTTP-статус ответа
     if ($http_code !== 200) {
         return new WP_REST_Response(['error' => 'Ошибка API: HTTP ' . $http_code], $http_code);
     }
 
+    // Парсим ответ API
     $response_decoded = json_decode($response, true);
 
     if (isset($response_decoded['error']['message'])) {
@@ -180,11 +198,11 @@ function handle_gemini_message(WP_REST_Request $request) {
     }
 
     $reply = $response_decoded['choices'][0]['message']['content'] ?? 'Ошибка: пустой ответ.';
-
     $_SESSION['gemini_chat_history'][] = ['role' => 'Gemini', 'content' => $reply];
 
     return new WP_REST_Response(['response' => $reply], 200);
 }
+
 
 // Обработчик очистки истории чата
 function clear_gemini_chat_history(WP_REST_Request $request) {
